@@ -1,0 +1,4 @@
+declare function listen(listener: () => void): void;
+const handler = async () => {};
+listen(handler);
+<on handler>

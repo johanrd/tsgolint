@@ -4,6 +4,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -13,6 +14,7 @@ import (
 	"github.com/typescript-eslint/tsgolint/internal/diagnostic"
 	"github.com/typescript-eslint/tsgolint/internal/rule"
 	"github.com/typescript-eslint/tsgolint/internal/rules/fixtures"
+	"github.com/typescript-eslint/tsgolint/internal/rules/no_misused_promises"
 	"github.com/typescript-eslint/tsgolint/internal/rules/no_unnecessary_condition"
 	"github.com/typescript-eslint/tsgolint/internal/rules/no_unnecessary_type_assertion"
 	"github.com/typescript-eslint/tsgolint/internal/rules/no_unsafe_assignment"
@@ -105,6 +107,57 @@ func TestContentMappedDiagnostics(t *testing.T) {
 	assert.Equal(t, len(fixes), 1)
 	assert.Equal(t, original[fixes[0].Range.Pos():fixes[0].Range.End()], " as number")
 	assert.Equal(t, fixes[0].Text, "")
+}
+
+// TestContentMappedTemplateHandlerFollowsAttributes covers a promise-returning handler passed from
+// template markup. The call it lands in is one the content mapper synthesized, as Glint does for
+// `{{on 'click' this.handler}}`, so it is markup like a JSX attribute: `checksVoidReturn.attributes`
+// governs it, while a call written verbatim in the file stays under `checksVoidReturn.arguments`.
+func TestContentMappedTemplateHandlerFollowsAttributes(t *testing.T) {
+	if _, err := exec.LookPath("node"); err != nil {
+		t.Skip("node is required to run a content mapper")
+	}
+	t.Cleanup(utils.ShutdownContentMappers)
+
+	rootDir, err := filepath.Abs(filepath.Join("testdata", "contentmapper"))
+	assert.NilError(t, err)
+	rootDir = tspath.NormalizePath(rootDir)
+	mappedFile := tspath.ResolvePath(rootDir, "src/template-handler.ext")
+
+	host := utils.CreateCompilerHost(rootDir, cachedBaseFS)
+	program, _, err := utils.CreateProgram(true, cachedBaseFS, rootDir, "tsconfig.json", host, false, true /*runExternalCode*/)
+	assert.NilError(t, err)
+	sourceFile := program.GetSourceFile(mappedFile)
+	assert.Assert(t, sourceFile != nil, "mapped file is not in the program")
+
+	lint := func(options any) []string {
+		var mu sync.Mutex
+		var reported []string
+		err := RunLinterOnProgram(RunLinterOnProgramOptions{
+			LogLevel: utils.LogLevelNormal,
+			Program:  program,
+			Files:    []*ast.SourceFile{sourceFile},
+			Workers:  1,
+			GetRulesForFile: func(*ast.SourceFile) []ConfiguredRule {
+				r := no_misused_promises.NoMisusedPromisesRule
+				return []ConfiguredRule{{Name: r.Name, Run: func(ctx rule.RuleContext) rule.RuleListeners { return r.Run(ctx, options) }}}
+			},
+			OnDiagnostic: func(d rule.RuleDiagnostic) {
+				mu.Lock()
+				defer mu.Unlock()
+				line := strings.Count(sourceFile.OriginalText()[:d.Range.Pos()], "\n") + 1
+				reported = append(reported, sourceFile.OriginalText()[d.Range.Pos():d.Range.End()]+" on line "+strconv.Itoa(line))
+			},
+			OnInternalDiagnostic: func(diagnostic.Internal) {},
+		})
+		assert.NilError(t, err)
+		sort.Strings(reported)
+		return reported
+	}
+
+	assert.DeepEqual(t, lint(nil), []string{"handler on line 3", "handler on line 4"})
+	assert.DeepEqual(t, lint(map[string]any{"checksVoidReturn": map[string]any{"attributes": false}}), []string{"handler on line 3"})
+	assert.DeepEqual(t, lint(map[string]any{"checksVoidReturn": map[string]any{"arguments": false}}), []string{"handler on line 4"})
 }
 
 // TestContentMapperOwnDiagnostics checks that a diagnostic the mapper produced itself is reported at

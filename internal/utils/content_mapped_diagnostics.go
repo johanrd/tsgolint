@@ -11,6 +11,18 @@ func IsContentMapped(file *ast.SourceFile) bool {
 	return file != nil && file.SpanMap() != nil
 }
 
+// IsContentMapperSynthesized reports whether a range in a content-mapped file is code the mapper
+// generated rather than a verbatim copy of the original, such as the call a template modifier becomes.
+// Ranges in files that are not content-mapped are never synthesized.
+func IsContentMapperSynthesized(file *ast.SourceFile, r core.TextRange) bool {
+	spanMap := file.SpanMap()
+	if spanMap == nil {
+		return false
+	}
+	_, fidelity := spanMap.VirtualToOriginalSpan(r)
+	return !fidelity.IsExact()
+}
+
 // MapContentMappedRange maps a range in a content-mapped file's virtual text back to the original file.
 // It reports false when the range lies entirely in synthesized code, which has no original counterpart.
 // Ranges in files that are not content-mapped pass through unchanged.

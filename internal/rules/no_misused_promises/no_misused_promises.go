@@ -606,6 +606,16 @@ var NoMisusedPromisesRule = rule.Rule{
 		checkArguments := func(
 			node *ast.Expression,
 		) {
+			// A call a content mapper synthesized is template markup, the counterpart of a JSX
+			// attribute, so it follows `attributes`; a call written in the file follows `arguments`.
+			if utils.IsContentMapperSynthesized(ctx.SourceFile, utils.TrimNodeTextRange(ctx.SourceFile, node.Expression())) {
+				if !checksVoidReturnOpts.Attributes {
+					return
+				}
+			} else if !checksVoidReturnOpts.Arguments {
+				return
+			}
+
 			voidArgs, expectations := voidFunctionArguments(node)
 			if len(voidArgs) == 0 {
 				return
@@ -925,7 +935,7 @@ var NoMisusedPromisesRule = rule.Rule{
 		}
 
 		if checksVoidReturn && checksVoidReturnOpts != nil {
-			if checksVoidReturnOpts.Arguments {
+			if checksVoidReturnOpts.Arguments || checksVoidReturnOpts.Attributes {
 				listeners[ast.KindCallExpression] = checkArguments
 				listeners[ast.KindNewExpression] = checkArguments
 			}
