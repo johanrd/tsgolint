@@ -1,0 +1,4 @@
+declare function takes(args: { onSave: () => void }): void;
+const handler = async () => {};
+takes({ onSave: handler });
+<arg handler>

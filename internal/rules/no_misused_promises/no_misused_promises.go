@@ -689,6 +689,16 @@ var NoMisusedPromisesRule = rule.Rule{
 		}
 
 		checkProperty := func(node *ast.Node) {
+			// An object a content mapper synthesized is template markup too, as Glint emits for
+			// `@onSave={{this.save}}`: it follows `attributes`, and one written in the file `properties`.
+			if utils.IsContentMapperSynthesized(ctx.SourceFile, utils.TrimNodeTextRange(ctx.SourceFile, node.Parent)) {
+				if !checksVoidReturnOpts.Attributes {
+					return
+				}
+			} else if !checksVoidReturnOpts.Properties {
+				return
+			}
+
 			if ast.IsPropertyAssignment(node) {
 				property := node.AsPropertyAssignment()
 				contextualType := checker.Checker_getContextualType(ctx.TypeChecker, property.Initializer, checker.ContextFlagsNone)
@@ -947,7 +957,7 @@ var NoMisusedPromisesRule = rule.Rule{
 				listeners[ast.KindClassExpression] = checkClassLikeOrInterfaceNode
 				listeners[ast.KindInterfaceDeclaration] = checkClassLikeOrInterfaceNode
 			}
-			if checksVoidReturnOpts.Properties {
+			if checksVoidReturnOpts.Properties || checksVoidReturnOpts.Attributes {
 				listeners[ast.KindPropertyAssignment] = checkProperty
 				listeners[ast.KindMethodDeclaration] = checkProperty
 				listeners[ast.KindShorthandPropertyAssignment] = checkProperty
