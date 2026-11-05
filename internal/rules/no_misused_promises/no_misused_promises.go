@@ -606,6 +606,16 @@ var NoMisusedPromisesRule = rule.Rule{
 		checkArguments := func(
 			node *ast.Expression,
 		) {
+			// A call a content mapper synthesized is template markup, the counterpart of a JSX
+			// attribute, so it follows `attributes`; a call written in the file follows `arguments`.
+			if utils.IsContentMapperSynthesized(ctx.SourceFile, utils.TrimNodeTextRange(ctx.SourceFile, node.Expression())) {
+				if !checksVoidReturnOpts.Attributes {
+					return
+				}
+			} else if !checksVoidReturnOpts.Arguments {
+				return
+			}
+
 			voidArgs, expectations := voidFunctionArguments(node)
 			if len(voidArgs) == 0 {
 				return
@@ -679,6 +689,16 @@ var NoMisusedPromisesRule = rule.Rule{
 		}
 
 		checkProperty := func(node *ast.Node) {
+			// An object a content mapper synthesized is template markup too, as Glint emits for
+			// `@onSave={{this.save}}`: it follows `attributes`, and one written in the file `properties`.
+			if utils.IsContentMapperSynthesized(ctx.SourceFile, utils.TrimNodeTextRange(ctx.SourceFile, node.Parent)) {
+				if !checksVoidReturnOpts.Attributes {
+					return
+				}
+			} else if !checksVoidReturnOpts.Properties {
+				return
+			}
+
 			if ast.IsPropertyAssignment(node) {
 				property := node.AsPropertyAssignment()
 				contextualType := checker.Checker_getContextualType(ctx.TypeChecker, property.Initializer, checker.ContextFlagsNone)
@@ -925,7 +945,7 @@ var NoMisusedPromisesRule = rule.Rule{
 		}
 
 		if checksVoidReturn && checksVoidReturnOpts != nil {
-			if checksVoidReturnOpts.Arguments {
+			if checksVoidReturnOpts.Arguments || checksVoidReturnOpts.Attributes {
 				listeners[ast.KindCallExpression] = checkArguments
 				listeners[ast.KindNewExpression] = checkArguments
 			}
@@ -937,7 +957,7 @@ var NoMisusedPromisesRule = rule.Rule{
 				listeners[ast.KindClassExpression] = checkClassLikeOrInterfaceNode
 				listeners[ast.KindInterfaceDeclaration] = checkClassLikeOrInterfaceNode
 			}
-			if checksVoidReturnOpts.Properties {
+			if checksVoidReturnOpts.Properties || checksVoidReturnOpts.Attributes {
 				listeners[ast.KindPropertyAssignment] = checkProperty
 				listeners[ast.KindMethodDeclaration] = checkProperty
 				listeners[ast.KindShorthandPropertyAssignment] = checkProperty
